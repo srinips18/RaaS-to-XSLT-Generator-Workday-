@@ -1,6 +1,6 @@
 # RaaS to XSLT Generator
 
-> **v1.0** · MIT License · By Srini · Kelly Services · Workday Dev Community
+> **v1.0** · MIT License · By Srini · Kelly · Workday Dev Community
 
 A single-file, browser-based tool that transforms any Workday RaaS XML export into a production-ready XSLT 3.0 stylesheet in minutes — no server, no installation, no dependencies.
 
