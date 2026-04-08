@@ -32,6 +32,26 @@ This tool collapses that 2–4 hour process into 5–10 minutes. Upload your XML
 No install. No server. No internet required after the page loads (Google Fonts are optional — the tool falls back to system fonts if offline).
 
 ---
+## Bugs and features added 04/08/2026
+
+### BUGS fixed:
+1. saveConfig drops otherwiseMode, otherwiseField, otherwiseTransform, otherwiseTransformParam
+The OTHERWISE dropdown supports three modes (Text / Field / XPath) with field selection and transform. These are in mkCol and used in XSLT generation — but none of them are in the cols.map(c => ({...})) in saveConfig. After a save/load, the OTHERWISE always resets to plain Text mode, losing any Field or XPath otherwise values.
+2. Fixed-width column widths don't survive save/load
+S.fixedWidths is keyed by col.id (an auto-incrementing integer). On load, S.nid++ generates completely new IDs — so the saved width map {3: 15, 4: 20} never matches the new IDs {7: ?, 8: ?}. All widths silently reset to the default of 20 characters.
+3. scanAllEntries doesn't re-run findRepeatingGroups
+When the user clicks "Scan All Entries", it discovers new fields from deeper in the file — but findRepeatingGroups only ran on the first 5 entries during parseXML. If a repeating group only appears after entry 5, it won't be in S.repeatingGroups, so child group expansion and aggregation mode detection both miss it.
+4. Fixed / JSON / HTML / XML / SpreadsheetML XSLT builders ignore aggregation
+Only buildDelimitedXSLT has an isGroupingActive() check. If the user sets up aggregation then switches to JSON or HTML Table format — the downloaded XSLT ignores all the agg roles and generates a flat per-row output. The JS preview correctly aggregates (via buildOutputWithAgg) but the XSLT is wrong.
+5. Multiple sibling repeating groups — only first handled
+firstGroupPath() always returns [...S.repeatingGroups][0]. If a report has both Dependents_group AND Deductions_group at the same level, only whichever was detected first gets used for flattening, aggregation, and XSLT generation. The second group's fields appear in the field picker but produce empty output.
+6. Conditional logic: test fields on parent when inside child-key aggregation
+In child-key mode (grouping by a child field), the XSLT for-each-group iterates child elements. Any conditional test referencing a parent field (e.g. Home_Address_State contains 'CA') generates string(wd:Home_Address_State) — which doesn't exist at the child element level. Needs string(../wd:Home_Address_State) same as fp2xpath does for value columns.
+7. No visual indicator on Step 3 columns showing their agg role
+Once you assign roles in Step 3.5, there's no feedback on the Step 3 column table itself. Users don't know which columns have roles without re-opening Step 3.5.
+8. Download Output button produces non-aggregated data even when agg is active
+buildOutput → buildOutputWithAgg handles the JS download correctly for CSV. But for other formats when switching back from CSV, the raw download may not route through buildOutputWithAgg consistently.
+---
 
 ## Features
 
