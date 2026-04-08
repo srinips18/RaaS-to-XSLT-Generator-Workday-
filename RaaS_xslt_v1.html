@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <!--
-  RaaS to XSLT for EIB  |  v1.0
+  Workday XML → XSLT Mapper  |  v1.1
   ─────────────────────────────────────────────────────────────────
   MIT License
 
-  Copyright (c) 2026 Srini
+  Copyright (c) 2026 Srini · Kelly Services · Workday Dev Community
 
   Permission is hereby granted, free of charge, to any person
   obtaining a copy of this software and associated documentation
@@ -35,7 +35,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RaaS to XSLT for EIB</title>
+<title>Workday XML → XSLT Mapper</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -253,16 +253,17 @@ tr.row-flash td{animation:rowFlash .9s ease-out}
       <span class="hdr-badge badge-oss">⚡ Open Source</span>
       <span class="hdr-badge badge-mit">⚖️ MIT License</span>
       <span class="hdr-badge badge-ver">v1.0</span>
+      <span class="hdr-author">By <strong>Srini</strong> · Kelly · Workday Dev</span>
     </div>
     <div class="hdr-meta-right">
-      <span class="hdr-copy">Free to use, modify &amp; share</span>
+      <span class="hdr-copy">Free to use, modify &amp; share · MIT License © 2026</span>
     </div>
   </div>
 
   <div class="hdr-main">
     <div>
-      <h1>RaaS to XSLT for EIB</h1>
-      <div class="sub">Upload any RaaS enabled Report XML · Auto-detect fields · Configure mapping · Preview output · Download XSLT</div>
+      <h1>Workday XML → XSLT Mapper</h1>
+      <div class="sub">Upload any Workday Report XML · Auto-detect fields · Configure mapping · Preview output · Download XSLT</div>
     </div>
   </div>
 </header>
@@ -272,7 +273,7 @@ tr.row-flash td{animation:rowFlash .9s ease-out}
   <div class="step">
     <div class="step-head">
       <div class="step-num">1</div>
-      <div class="step-title">Upload XML</div>
+      <div class="step-title">Upload Workday XML</div>
     </div>
     <div class="step-body" style="padding:14px 20px">
 
@@ -751,6 +752,24 @@ function scanAllEntries() {
     type: v.type, attrType: v.attrType,
     isWID: v.attrType === 'WID'
   }));
+
+  S.repeatingGroups = new Set();
+  if (S.allEntries.length) {
+    function findRepeatingGroupsFull(el, path) {
+      const counts = new Map();
+      for (const child of el.children) {
+        if (child.localName === 'ID') continue;
+        counts.set(child.localName, (counts.get(child.localName) || 0) + 1);
+      }
+      for (const child of el.children) {
+        if (child.localName === 'ID') continue;
+        const childPath = path ? path + '/' + child.localName : child.localName;
+        if (counts.get(child.localName) > 1) S.repeatingGroups.add(childPath);
+        if (child.children.length > 0) findRepeatingGroupsFull(child, childPath);
+      }
+    }
+    S.allEntries.forEach(e => findRepeatingGroupsFull(e, ''));
+  }
   renderFields();
   const scanInfo = document.getElementById('scan-info');
   scanInfo.textContent = `Scanned all ${S.allEntries.length} entries · ${S.fields.length} fields detected`;
@@ -882,7 +901,7 @@ function mkCol(srcType, name, fp, fixed, transform, conds, otherwise) {
 
 function saveConfig() {
   const config = {
-    version: 4,
+    version: 5,
     format: S.format,
     delimiter: S.delimiter,
     includeHeader: S.includeHeader,
@@ -911,6 +930,8 @@ function saveConfig() {
       srcType: c.srcType, name: c.name, fp: c.fp, fixed: c.fixed,
       transform: c.transform, transformParam: c.transformParam, transformParam2: c.transformParam2,
       conds: c.conds, otherwise: c.otherwise, otherwiseIsXpath: c.otherwiseIsXpath,
+      otherwiseMode: c.otherwiseMode || 'text', otherwiseField: c.otherwiseField || '',
+      otherwiseTransform: c.otherwiseTransform || 'none', otherwiseTransformParam: c.otherwiseTransformParam || '',
       concatParts: c.concatParts, concatSep: c.concatSep, xpathExpr: c.xpathExpr,
       aggRole: c.aggRole || '', concatAggSep: c.concatAggSep != null ? c.concatAggSep : ', '
     }))
@@ -992,6 +1013,10 @@ function loadConfig(input) {
         conds: (c.conds || []).map(normalizeCond),
         otherwise: c.otherwise || '',
         otherwiseIsXpath: c.otherwiseIsXpath || false,
+        otherwiseMode: c.otherwiseMode || 'text',
+        otherwiseField: c.otherwiseField || '',
+        otherwiseTransform: c.otherwiseTransform || 'none',
+        otherwiseTransformParam: c.otherwiseTransformParam || '',
         concatParts: c.concatParts || [],
         concatSep: c.concatSep != null ? c.concatSep : ' ',
         xpathExpr: c.xpathExpr || '',
@@ -1094,8 +1119,12 @@ function renderCols() {
     tr.appendChild(tdMove);
 
     const tdName = el('td');
-    tdName.innerHTML = `<input type="text" value="${esc(col.name)}" aria-label="Column name"
-      onchange="upd(${col.id},'name',this.value)" oninput="upd(${col.id},'name',this.value)">`;
+    const _aggBg    = col.aggRole === 'key' ? '#dbeafe' : '#dcfce7';
+    const _aggColor = col.aggRole === 'key' ? '#1e40af' : '#166534';
+    const _aggLbl   = {'key':'🔑 Identity','sum':'∑ Total','count':'# Count','avg':'⌀ Avg','min':'↓ Min','max':'↑ Max','first':'① First','concat':'⊕ Join'}[col.aggRole]||'';
+    const _aggBadge = col.aggRole ? `<span style="font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:8px;white-space:nowrap;background:${_aggBg};color:${_aggColor};border:1px solid ${_aggColor}40">${_aggLbl}</span><br>` : '';
+    tdName.innerHTML = `${_aggBadge}<input type="text" value="${esc(col.name)}" aria-label="Column name"
+      onchange="upd(${col.id},'name',this.value)" oninput="upd(${col.id},'name',this.value)" style="width:100%">`;
     tr.appendChild(tdName);
 
     const tdSrc = el('td');
@@ -1635,13 +1664,13 @@ function renderFixedWidths() {
   if (!wrap) return;
   wrap.innerHTML = '';
   S.cols.forEach(col => {
-    const w = S.fixedWidths[col.id] || 20;
+    const w = S.fixedWidths[col.name] || S.fixedWidths[col.id] || 20;
     const d = document.createElement('div');
     d.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:.8rem';
     d.innerHTML = `<span style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(col.name)}">${esc(col.name)}</span>
       <input type="number" value="${w}" min="1" max="500" style="width:54px;padding:3px 5px;border:1px solid #cbd5e0;border-radius:4px;font-size:.8rem"
-        onchange="S.fixedWidths[${col.id}]=parseInt(this.value)||20;refreshPreview()"
-        oninput="S.fixedWidths[${col.id}]=parseInt(this.value)||20;refreshPreview()">`;
+        onchange="S.fixedWidths['${col.name}']=parseInt(this.value)||20;refreshPreview()"
+        oninput="S.fixedWidths['${col.name}']=parseInt(this.value)||20;refreshPreview()">`;
     wrap.appendChild(d);
   });
 }
@@ -1992,7 +2021,7 @@ function buildDelimitedOutput(entries) {
 
 function buildFixedOutput(entries) {
   const pad = S.fixedPad || ' ';
-  const widths = S.cols.map(c => S.fixedWidths[c.id] || 20);
+  const widths = S.cols.map(c => S.fixedWidths[c.name] || S.fixedWidths[c.id] || 20);
   const fixVal = (v, w) => { const s = String(v); return s.length >= w ? s.slice(0, w) : s + pad.repeat(w - s.length); };
   const lines = [];
   if (S.includeHeader) lines.push(S.cols.map((c, i) => fixVal(c.name || '', widths[i])).join(''));
@@ -2080,7 +2109,7 @@ function buildXsltCommentBlock() {
   const timeStr = now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true });
 
   const lines = [];
-  lines.push(`  Generated by  : RaaS to XSLT for EIB`);
+  lines.push(`  Generated by  : Workday XML → XSLT Mapper`);
   lines.push(`  Generated on  : ${dateStr} at ${timeStr}`);
   if (S.fileName)  lines.push(`  Source XML    : ${S.fileName}`);
   if (purpose)     lines.push(`  Purpose       : ${purpose}`);
@@ -2139,6 +2168,22 @@ function isGroupingActive() {
   return S.groupingEnabled && S.cols.some(c => c.aggRole === 'key');
 }
 
+function detectAggMode() {
+  const grpPath = firstGroupPath();
+  if (!grpPath) return 'entry';
+
+  const isChild = fp => fp && fp.startsWith(grpPath + '/');
+  const keyCols = S.cols.filter(c => c.aggRole === 'key');
+  const aggCols = S.cols.filter(c => c.aggRole && c.aggRole !== '' && c.aggRole !== 'key');
+
+  const hasChildKey = keyCols.some(c => isChild(c.fp));
+  const hasChildAgg = aggCols.some(c => isChild(c.fp));
+
+  if (hasChildKey) return 'child-key';
+  if (hasChildAgg) return 'child';
+  return 'entry';
+}
+
 function aggGroupByExpr() {
   const keyCols = S.cols.filter(c => c.aggRole === 'key');
   const hasChildGroup = !!(firstGroupPath());
@@ -2150,17 +2195,97 @@ function aggGroupByExpr() {
 
 function aggColXSLTExpr(col) {
   const role = col.aggRole || '';
-  const hasChildGroup = !!(firstGroupPath());
+  const mode = detectAggMode();
+
+  if (mode === 'child') {
+
+    const childXp = grpPath.split('/').map(s => 'wd:' + s).join('/');
+
+    let relXp = col.fp ? fp2xpath(col.fp) : "''";
+
+    const grpPath = firstGroupPath();
+  const isChildField = grpPath && col.fp && col.fp.startsWith(grpPath + '/');
+    const parentXp = col.fp ? col.fp.split('/').map(s => 'wd:' + s).join('/') : "''";
+
+    let childRelXp = '';
+    if (isChildField) {
+      const stripped = col.fp.slice(grpPath.length + 1);
+      const am = stripped.match(/^(.+)\[(.+)\]$/);
+      childRelXp = am
+        ? `${am[1].split('/').map(s=>'wd:'+s).join('/')}/wd:ID[@wd:type='${am[2]}']`
+        : stripped.split('/').map(s=>'wd:'+s).join('/');
+    }
+
+    switch (role) {
+      case 'key':    return parentXp;
+      case 'count':
+
+        return isChildField
+          ? `count(${childXp}/${childRelXp})`
+          : `count(${childXp})`;
+      case 'sum':
+        return isChildField
+          ? `sum(${childXp}/${childRelXp})`
+          : `count(${childXp})`;
+      case 'avg':
+        return isChildField
+          ? `(if (count(${childXp}) gt 0) then format-number(sum(${childXp}/${childRelXp}) div count(${childXp}), '0.####') else '0')`
+          : '0';
+      case 'min':
+        return isChildField ? `min(${childXp}/${childRelXp})` : '';
+      case 'max':
+        return isChildField ? `max(${childXp}/${childRelXp})` : '';
+      case 'first':
+        return isChildField ? `${childXp}[1]/${childRelXp}` : parentXp;
+      case 'concat': {
+        const sep = xesc(col.concatAggSep != null ? col.concatAggSep : ', ');
+        return isChildField
+          ? `string-join(${childXp}/${childRelXp}, '${sep}')`
+          : parentXp;
+      }
+      default: return parentXp;
+    }
+  }
+
+  if (mode === 'child-key') {
+    const grpPath2 = firstGroupPath();
+    const isChildFp = grpPath2 && col.fp && col.fp.startsWith(grpPath2 + '/');
+
+    let childRelXp2 = '';
+    if (isChildFp) {
+      const stripped2 = col.fp.slice(grpPath2.length + 1);
+      const am2 = stripped2.match(/^(.+)\[(.+)\]$/);
+      childRelXp2 = am2
+        ? `${am2[1].split('/').map(s=>'wd:'+s).join('/')}/wd:ID[@wd:type='${am2[2]}']`
+        : stripped2.split('/').map(s=>'wd:'+s).join('/');
+    }
+
+    const parentXp2 = col.fp
+      ? '../' + col.fp.split('/').map(s => 'wd:' + s).join('/')
+      : "''";
+    const resolvedXp = isChildFp ? childRelXp2 : parentXp2;
+    switch (role) {
+      case 'key':   return resolvedXp;
+      case 'count': return `count(current-group())`;
+      case 'sum':   return `sum(current-group()/${resolvedXp})`;
+      case 'avg':   return `format-number(sum(current-group()/${resolvedXp}) div count(current-group()), '0.####')`;
+      case 'min':   return `min(current-group()/${resolvedXp})`;
+      case 'max':   return `max(current-group()/${resolvedXp})`;
+      case 'first': return resolvedXp;
+      case 'concat': {
+        const sep2 = xesc(col.concatAggSep != null ? col.concatAggSep : ', ');
+        return `string-join(current-group()/${resolvedXp}, '${sep2}')`;
+      }
+      default: return resolvedXp;
+    }
+  }
 
   const xp = col.fp ? fp2xpath(col.fp) : (col.fixed ? `'${xesc(col.fixed)}'` : "''");
-
   switch (role) {
-    case 'key':
-
-      return xp;
-    case 'sum':    return `sum(current-group()/${xp})`;
+    case 'key':    return xp;
+    case 'sum':    return `xs:decimal(sum(current-group()/${xp}))`;
     case 'count':  return `count(current-group())`;
-    case 'avg':    return `format-number(sum(current-group()/${xp}) div count(current-group()), '0.####')`;
+    case 'avg':    return `format-number(xs:decimal(sum(current-group()/${xp})) div count(current-group()), '0.####')`;
     case 'min':    return `min(current-group()/${xp})`;
     case 'max':    return `max(current-group()/${xp})`;
     case 'first':  return xp;
@@ -2183,14 +2308,30 @@ function aggRowBodyXSLT(activeCols, sep, pad) {
 }
 
 function aggForEachGroupXSLT(innerBody, indent) {
-  const groupBy = aggGroupByExpr();
+  const mode = detectAggMode();
   const grpPath = firstGroupPath();
 
-  const selectPath = grpPath
-    ? `wd:Report_Data/wd:Report_Entry/${grpPath.split('/').map(s=>'wd:'+s).join('/')}`
-    : `wd:Report_Data/wd:Report_Entry`;
+  if (mode === 'child') {
 
-  return `${indent}<xsl:for-each-group select="${selectPath}" group-by="${groupBy}">\n` +
+    return `${indent}<xsl:for-each select="wd:Report_Data/wd:Report_Entry">\n` +
+           innerBody +
+           `${indent}</xsl:for-each>\n`;
+  }
+
+  if (mode === 'child-key') {
+
+    const childPath = grpPath.split('/').map(s=>'wd:'+s).join('/');
+    const groupBy = aggGroupByExpr();
+    return `${indent}<xsl:for-each-group select="wd:Report_Data/wd:Report_Entry/${childPath}" group-by="${groupBy}">\n` +
+           `${indent}    <xsl:sort select="${groupBy}"/>\n` +
+           `${indent}    <xsl:for-each select="current-group()">\n` +
+           innerBody +
+           `${indent}    </xsl:for-each>\n` +
+           `${indent}</xsl:for-each-group>\n`;
+  }
+
+  const groupBy = aggGroupByExpr();
+  return `${indent}<xsl:for-each-group select="wd:Report_Data/wd:Report_Entry" group-by="${groupBy}">\n` +
          `${indent}    <xsl:sort select="${groupBy}"/>\n` +
          `${indent}    <xsl:for-each select="current-group()">\n` +
          innerBody +
@@ -2221,7 +2362,7 @@ function buildDelimitedXSLT() {
         <xsl:text>${xesc(hdr)}</xsl:text>
         <xsl:value-of select="$linefeed"/>
 ${aggLoop}    </xsl:template>
-${UTIL_FNS}
+${UTIL_FNS()}
 </xsl:stylesheet>`;
   }
 
@@ -2245,12 +2386,32 @@ ${UTIL_FNS}
         <xsl:for-each select="${outerSelect}">
 ${innerLoop}        </xsl:for-each>
     </xsl:template>
-${UTIL_FNS}
+${UTIL_FNS()}
 </xsl:stylesheet>`;
 }
 
 function buildFixedXSLT() {
-  const widths = S.cols.map(c => S.fixedWidths[c.id] || 20);
+  if (isGroupingActive()) {
+    const activeCols = S.cols.filter(c => c.aggRole && c.aggRole !== '');
+    const widths = activeCols.map(c => S.fixedWidths[c.name] || 20);
+    const hdr = activeCols.map((c,i) => (c.name||'').padEnd(widths[i]).slice(0,widths[i])).join('');
+    let rowBody = '';
+    activeCols.forEach((col,i) => {
+      rowBody += `            <xsl:value-of select="this:pad-string-to-length(substring(string(${aggColXSLTExpr(col)}),1,${widths[i]}), ' ', ${widths[i]})"/>\n`;
+    });
+    rowBody += '            <xsl:value-of select="$linefeed"/>\n';
+    const aggLoop = aggForEachGroupXSLT(rowBody, '        ');
+    return `${xsltHeader('text', ' omit-xml-declaration="yes"')}
+    <xsl:variable name="linefeed" select="'&#xa;'"/>
+
+    <xsl:template match="/">
+        <xsl:text>${xesc(hdr)}</xsl:text>
+        <xsl:value-of select="$linefeed"/>
+${aggLoop}    </xsl:template>
+${UTIL_FNS()}
+</xsl:stylesheet>`;
+  }
+  const widths = S.cols.map(c => S.fixedWidths[c.name] || S.fixedWidths[c.id] || 20);
   const hdr = S.cols.map((c, i) => (c.name||'').padEnd(widths[i]).slice(0, widths[i])).join('');
   let body = '';
   S.cols.forEach((col, i) => {
@@ -2268,11 +2429,30 @@ function buildFixedXSLT() {
         <xsl:for-each select="${outerSelFixed}">
 ${innerFixed}        </xsl:for-each>
     </xsl:template>
-${UTIL_FNS}
+${UTIL_FNS()}
 </xsl:stylesheet>`;
 }
 
 function buildJSONXSLT() {
+
+  if (isGroupingActive()) {
+    const activeCols = S.cols.filter(c => c.aggRole && c.aggRole !== '');
+    const hdrItems = activeCols.map(c => `<xsl:string>${xesc(c.name||'col')}</xsl:string>`).join('');
+    let mapEntries = '';
+    activeCols.forEach(col => {
+      mapEntries += `                <xsl:map-entry key="'${xesc(col.name||'col')}'" select="string(${aggColXSLTExpr(col)})"/>\n`;
+    });
+    const rowBody = `            <xsl:map>\n${mapEntries}            </xsl:map>\n`;
+    const aggLoop = aggForEachGroupXSLT(rowBody, '        ');
+    return `${xsltHeader('json', ' indent="yes"')}
+
+    <xsl:template match="/">
+        <xsl:array>
+            <xsl:array>${hdrItems}</xsl:array>
+${aggLoop}        </xsl:array>
+    </xsl:template>
+</xsl:stylesheet>`;
+  }
   if (S.jsonMode === 'arrays') {
     const hdrItems = S.cols.map(c => `<xsl:string>${xesc(c.name||'col')}</xsl:string>`).join('');
     let rowItems = '';
@@ -2292,6 +2472,7 @@ ${rowItems}                </xsl:array>
     </xsl:template>
 </xsl:stylesheet>`;
   }
+
   let mapEntries = '';
   S.cols.forEach(col => {
     mapEntries += `                <xsl:map-entry key="'${xesc(col.name||'col')}'" select="string(${colXSLTExpr(col)})"/>\n`;
@@ -2310,7 +2491,6 @@ ${mapEntries}                </xsl:map>
     </xsl:template>
 </xsl:stylesheet>`;
 }
-
 function buildHTMLXSLT() {
   const cls   = xesc(S.htmlClass || 'report-table');
   const thSty = S.htmlInlineStyle ? ' style="background:#1a56db;color:#fff;padding:8px 12px;text-align:left"' : '';
@@ -2329,13 +2509,13 @@ function buildHTMLXSLT() {
 ${hdrCells}
             </tr></thead>
             <tbody>
-                <xsl:for-each select="wd:Report_Data/wd:Report_Entry">
+                ${isGroupingActive() ? aggForEachGroupXSLT(`                <tr>\n                    ${dataCells.trim()}\n                </tr>\n`, '                ').replace(/^/gm,'') : `<xsl:for-each select="wd:Report_Data/wd:Report_Entry">
                 ${firstGroupPath() ? `<xsl:for-each select="${firstGroupPath().split('/').map(s=>'wd:'+s).join('/')}">` : ''}
                 <tr>
                     ${dataCells.trim()}
                 </tr>
                 ${firstGroupPath() ? '</xsl:for-each>' : ''}
-                </xsl:for-each>
+                </xsl:for-each>`}
             </tbody>
         </table>
         ${wrap?'</body>\n        </html>':''}
@@ -2346,6 +2526,24 @@ ${hdrCells}
 function buildXMLXSLT() {
   const root = xmlTag(S.xmlRoot || 'Records');
   const row  = xmlTag(S.xmlRow  || 'Record');
+  if (isGroupingActive()) {
+    const activeCols = S.cols.filter(c => c.aggRole && c.aggRole !== '');
+    let fields = '';
+    activeCols.forEach(col => {
+      const tag = xmlTag(col.name || 'col');
+      fields += `                <${tag}><xsl:value-of select="${aggColXSLTExpr(col)}"/></${tag}>\n`;
+    });
+    const rowBody = `            <${row}>\n${fields}            </${row}>\n`;
+    const aggLoop = aggForEachGroupXSLT(rowBody, '        ');
+    return `${xsltHeader('xml', ' indent="yes"')}
+
+    <xsl:template match="/">
+        <${root}>
+${aggLoop}        </${root}>
+    </xsl:template>
+${UTIL_FNS()}
+</xsl:stylesheet>`;
+  }
   let fields = '';
   S.cols.forEach(col => {
     const tag = xmlTag(col.name || 'col');
@@ -2363,7 +2561,7 @@ ${fields}            </${row}>
             </xsl:for-each>
         </${root}>
     </xsl:template>
-${UTIL_FNS}
+${UTIL_FNS()}
 </xsl:stylesheet>`;
 }
 
@@ -2601,8 +2799,8 @@ function fp2xpath(fp) {
   return isParentField ? `../${xp}` : xp;
 }
 
-const UTIL_FNS = `
-
+const _UF = {
+  csvEscape: `
     <xsl:function name="this:csv-escape" as="xs:string">
         <xsl:param name="text" as="xs:string"/>
         <xsl:choose>
@@ -2613,8 +2811,9 @@ const UTIL_FNS = `
                 <xsl:sequence select="$text"/>
             </xsl:otherwise>
         </xsl:choose>
-    </xsl:function>
+    </xsl:function>`,
 
+  formatDate: `
     <xsl:function name="this:formatDate">
         <xsl:param name="Input"/>
         <xsl:param name="Pattern" as="xs:string"/>
@@ -2632,8 +2831,9 @@ const UTIL_FNS = `
                 <xsl:value-of select="$Input"/>
             </xsl:otherwise>
         </xsl:choose>
-    </xsl:function>
+    </xsl:function>`,
 
+  formatDateTime: `
     <xsl:function name="this:formatDateTime">
         <xsl:param name="Input"/>
         <xsl:param name="Pattern" as="xs:string"/>
@@ -2648,27 +2848,31 @@ const UTIL_FNS = `
                 <xsl:value-of select="$Input"/>
             </xsl:otherwise>
         </xsl:choose>
-    </xsl:function>
+    </xsl:function>`,
 
+  padString: `
     <xsl:function name="this:pad-string-to-length" as="xs:string">
         <xsl:param name="stringToPad" as="xs:string?"/>
         <xsl:param name="padChar" as="xs:string"/>
         <xsl:param name="length" as="xs:integer"/>
         <xsl:sequence select="substring(string-join(($stringToPad, for $i in (1 to $length) return $padChar), ''), 1, $length)"/>
-    </xsl:function>
+    </xsl:function>`,
 
+  repeatString: `
     <xsl:function name="this:repeat-string" as="xs:string">
         <xsl:param name="stringToRepeat" as="xs:string?"/>
         <xsl:param name="count" as="xs:integer"/>
         <xsl:sequence select="string-join((for $i in 1 to $count return $stringToRepeat), '')"/>
-    </xsl:function>
+    </xsl:function>`,
 
+  padNumber: `
     <xsl:function name="this:pad-number-to-length" as="xs:string">
         <xsl:param name="numberToPad" as="xs:anyAtomicType?"/>
         <xsl:param name="length" as="xs:integer"/>
         <xsl:sequence select="concat(this:repeat-string('0', $length - string-length(string($numberToPad))), string($numberToPad))"/>
-    </xsl:function>
+    </xsl:function>`,
 
+  zonedDecimal: `
     <xsl:function name="this:zoned-decimal" as="xs:string">
         <xsl:param name="value" as="xs:decimal"/>
         <xsl:variable name="raw" select="abs($value * 100)"/>
@@ -2678,7 +2882,56 @@ const UTIL_FNS = `
         <xsl:variable name="zoned-neg" select="'JKLMNOPQR}'"/>
         <xsl:variable name="zoned-char" select="if ($value &gt;= 0) then substring($zoned-pos, number($last-digit) + 1, 1) else substring($zoned-neg, number($last-digit) + 1, 1)"/>
         <xsl:sequence select="concat($digits, $zoned-char)"/>
-    </xsl:function>`;
+    </xsl:function>`
+};
+
+function buildUtilFns() {
+
+  const transforms = new Set();
+  const activeCols = isGroupingActive()
+    ? S.cols.filter(c => c.aggRole && c.aggRole !== '')
+    : S.cols;
+
+  function collectTransform(t) { if (t && t !== 'none') transforms.add(t); }
+
+  activeCols.forEach(col => {
+    collectTransform(col.transform);
+    (col.concatParts || []).forEach(p => collectTransform(p.transform));
+    (col.conds || []).forEach(c => {
+      collectTransform(c.outTransform);
+      (c.groups || []).forEach(g => (g.tests||[]).forEach(t => collectTransform(t.transform)));
+    });
+    collectTransform(col.otherwiseTransform);
+  });
+
+  const dateFormats    = ['date-mdy','date-ymd','date-yyyymmdd','plan-year','date-year','date-month','date-day','date-month-name','date-year-add'];
+  const dateTimeFormats = ['datetime-mdy','datetime-ymd'];
+  const padStringFmts  = ['pad-right-str'];
+  const padNumFmts     = ['pad-left-num'];
+  const zonedFmts      = ['zoned-decimal'];
+
+  const needsCsvEscape   = (S.format === 'csv' || S.format === 'tsv' || S.format === 'xlsx') && S.csvQuote;
+  const needsFormatDate  = dateFormats.some(t => transforms.has(t));
+  const needsFormatDT    = dateTimeFormats.some(t => transforms.has(t));
+  const needsPadString   = S.format === 'fixed' || padStringFmts.some(t => transforms.has(t));
+  const needsPadNum      = padNumFmts.some(t => transforms.has(t));
+  const needsRepeatStr   = needsPadNum;
+  const needsZoned       = zonedFmts.some(t => transforms.has(t));
+
+  const parts = [];
+  if (needsCsvEscape)  parts.push(_UF.csvEscape);
+  if (needsFormatDate) parts.push(_UF.formatDate);
+  if (needsFormatDT)   parts.push(_UF.formatDateTime);
+  if (needsPadString)  parts.push(_UF.padString);
+  if (needsRepeatStr)  parts.push(_UF.repeatString);
+  if (needsPadNum)     parts.push(_UF.padNumber);
+  if (needsZoned)      parts.push(_UF.zonedDecimal);
+
+  if (!parts.length) return '';
+  return '\n' + parts.join('\n') + '\n';
+}
+
+function UTIL_FNS() { return buildUtilFns(); }
 
 function dlXSLT() {
   const xslt = buildXSLT();
@@ -2961,6 +3214,7 @@ function updAggRole(colId, role, selectEl) {
   S.groupingEnabled = S.cols.some(c => c.aggRole && c.aggRole !== '');
   const badge = document.getElementById('agg-active-badge');
   if (badge) badge.style.display = S.groupingEnabled ? 'inline-flex' : 'none';
+  renderCols();
   renderAggTable();
   refreshPreview();
 }
@@ -2994,6 +3248,7 @@ function aggAutoAssign() {
     }
   });
   S.groupingEnabled = true;
+  renderCols();
   renderAggTable();
   refreshPreview();
 }
@@ -3003,42 +3258,131 @@ function aggClearAll() {
   S.groupingEnabled = false;
   const badge = document.getElementById('agg-active-badge');
   if (badge) badge.style.display = 'none';
+  renderCols();
   renderAggTable();
   refreshPreview();
 }
 
 function buildAggregatedEntries(rawEntries) {
-  const flatEntries = getEffectiveEntries(rawEntries);
-  const keyCols  = S.cols.filter(c => c.aggRole === 'key');
-  const aggCols  = S.cols.filter(c => c.aggRole && c.aggRole !== 'key' && c.aggRole !== '');
+  const keyCols = S.cols.filter(c => c.aggRole === 'key');
+  if (!keyCols.length) return getEffectiveEntries(rawEntries);
 
-  if (!keyCols.length) return flatEntries;
+  const mode = detectAggMode();
+  const grpPath = firstGroupPath();
 
+  if (mode === 'child' && grpPath) {
+
+    const ns = S.nsURI;
+    const groupLocalName = grpPath.split('/').pop();
+    return rawEntries.map(entry => {
+      const childEls = ns
+        ? Array.from(entry.getElementsByTagNameNS(ns, groupLocalName)).filter(c => c.parentElement === entry)
+        : Array.from(entry.getElementsByTagName(groupLocalName)).filter(c => c.parentElement === entry);
+      return {
+        _isAggGroup: true, _isChildGroupAgg: true,
+        _group: childEls, _first: entry
+      };
+    });
+  }
+
+  if (mode === 'child-key' && grpPath) {
+
+    const ns = S.nsURI;
+    const groupLocalName = grpPath.split('/').pop();
+    const allChildEls = [];
+    for (const entry of rawEntries) {
+      const childEls = ns
+        ? Array.from(entry.getElementsByTagNameNS(ns, groupLocalName)).filter(c => c.parentElement === entry)
+        : Array.from(entry.getElementsByTagName(groupLocalName)).filter(c => c.parentElement === entry);
+      childEls.forEach(ch => allChildEls.push({ node: ch, parent: entry, groupPath: grpPath }));
+    }
+
+    const groups = new Map(); const keyOrder = [];
+    for (const fe of allChildEls) {
+      const keyVal = keyCols.map(c => getVal(fe, c)).join('|§|');
+      if (!groups.has(keyVal)) { groups.set(keyVal, []); keyOrder.push(keyVal); }
+      groups.get(keyVal).push(fe);
+    }
+    return keyOrder.map(keyVal => {
+      const group = groups.get(keyVal);
+      return { _isAggGroup: true, _isChildGroupAgg: false, _isChildKeyAgg: true,
+               _group: group, _first: group[0] };
+    });
+  }
+
+  const sourceEntries = rawEntries.map(e => ({ node: e, parent: null, groupPath: '' }));
   const groups = new Map();
   const keyOrder = [];
-
-  for (const fe of flatEntries) {
+  for (const fe of sourceEntries) {
     const keyVal = keyCols.map(c => getVal(fe, c)).join('|§|');
     if (!groups.has(keyVal)) { groups.set(keyVal, []); keyOrder.push(keyVal); }
     groups.get(keyVal).push(fe);
   }
-
   return keyOrder.map(keyVal => {
     const group = groups.get(keyVal);
-    const first = group[0];
-
-    return { _isAggGroup: true, _group: group, _first: first };
+    return { _isAggGroup: true, _isChildGroupAgg: false, _group: group, _first: group[0] };
   });
 }
 
 function getAggVal(aggEntry, col) {
   if (!aggEntry._isAggGroup) return getVal(aggEntry, col);
-  const group  = aggEntry._group;
-  const first  = aggEntry._first;
-  const role   = col.aggRole || '';
 
+  const role  = col.aggRole || '';
+  const first = aggEntry._first;
+
+  if (aggEntry._isChildGroupAgg) {
+    const childEls = aggEntry._group;
+    const ns = S.nsURI;
+
+    if (role === 'key' || role === '' || !col.fp) {
+      return getVal({ node: first, parent: null }, col);
+    }
+
+    const grpPath = firstGroupPath();
+    const isChildField = grpPath && col.fp.startsWith(grpPath + '/');
+
+    if (!isChildField) {
+
+      return getVal({ node: first, parent: null }, col);
+    }
+
+    const childVals = childEls.map(childEl => {
+
+      return extractField(childEl, col.fp.slice(grpPath.length + 1), col.transform || 'none', col.transformParam || '', col.transformParam2 || '');
+    });
+
+    switch (role) {
+      case 'count': return String(childEls.length);
+      case 'sum': {
+        if (!childEls.length) return '0';
+        const nums = childVals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+        return nums.length ? String(nums.reduce((a,b) => a+b, 0)) : '0';
+      }
+      case 'avg': {
+        if (!childEls.length) return '0';
+        const nums = childVals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+        if (!nums.length) return '0';
+        return String(Math.round(nums.reduce((a,b)=>a+b,0) / nums.length * 10000) / 10000);
+      }
+      case 'min': {
+        const nums = childVals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+        return nums.length ? String(Math.min(...nums)) : '';
+      }
+      case 'max': {
+        const nums = childVals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+        return nums.length ? String(Math.max(...nums)) : '';
+      }
+      case 'first': return childVals[0] || '';
+      case 'concat': {
+        const sep = col.concatAggSep != null ? col.concatAggSep : ', ';
+        return [...new Set(childVals.filter(Boolean))].join(sep);
+      }
+      default: return childVals[0] || '';
+    }
+  }
+
+  const group = aggEntry._group;
   if (role === 'key' || role === '') return getVal(first, col);
-
   const vals = group.map(fe => getVal(fe, col));
 
   switch (role) {
@@ -3050,8 +3394,7 @@ function getAggVal(aggEntry, col) {
     case 'avg': {
       const nums = vals.map(v => parseFloat(v)).filter(n => !isNaN(n));
       if (!nums.length) return '';
-      const avg = nums.reduce((a,b) => a+b, 0) / nums.length;
-      return String(Math.round(avg * 10000) / 10000);
+      return String(Math.round(nums.reduce((a,b)=>a+b,0) / nums.length * 10000) / 10000);
     }
     case 'min': {
       const nums = vals.map(v => parseFloat(v)).filter(n => !isNaN(n));
